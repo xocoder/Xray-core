@@ -25,6 +25,7 @@ import (
 // Server is a SOCKS 5 proxy server
 type Server struct {
 	config        *ServerConfig
+	validator     *Validator
 	policyManager policy.Manager
 	cone          bool
 }
@@ -32,8 +33,10 @@ type Server struct {
 // NewServer creates a new Server object.
 func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	v := core.MustFromContext(ctx)
+	validator := new(Validator)
 	s := &Server{
 		config:        config,
+		validator:     validator,
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
 		cone:          ctx.Value("cone").(bool),
 	}
@@ -50,6 +53,20 @@ func (s *Server) policy() policy.Session {
 		p.Timeouts.ConnectionIdle = time.Duration(config.Timeout) * time.Second
 	}
 	return p
+}
+
+// AddUser implements proxy.UserManager.AddUser().
+func (s *Server) AddUser(ctx context.Context, u *protocol.MemoryUser) error {
+	username := u.Account.(*Account).Username
+	password := u.Account.(*Account).Password
+	s.config.Accounts[username] = password
+	return s.validator.Add(u)
+}
+
+// RemoveUser implements proxy.UserManager.RemoveUser().
+func (s *Server) RemoveUser(ctx context.Context, e string) error {
+	delete(s.config.Accounts, e)
+	return s.validator.Del(e)
 }
 
 // Network implements proxy.Inbound.
